@@ -27,9 +27,10 @@ If you want to skip compiling, download the latest release assets and copy the `
 
 1. Go to [Releases](https://github.com/Delitants/lmstudio-vulkan-kepler-patch/releases).
 2. Download `lmstudio-vulkan-kepler-libraries.zip`.
-3. Extract and copy the `.so` files into a duplicated LM Studio Vulkan backend folder (see **Integrate into LM Studio** below).
-4. Replace `backend-manifest.json` with the one from `lm-studio-manifest/` in this repo.
-5. Restart LM Studio.
+3. Duplicate your stock LM Studio Vulkan backend folder (see step 3 below).
+4. Copy **only** the `.so` files from the zip into the duplicated folder. **Do not touch any other files.**
+5. Use the included `backend-manifest.json` as a reference for editing the manifest in your duplicated folder.
+6. Restart LM Studio.
 
 ---
 
@@ -177,12 +178,31 @@ cp -r llama.cpp-linux-x86_64-vulkan-avx2-2.14.0 \
 
 ### 4. Replace only the llama.cpp shared libraries
 
-Do **not** replace `.node` files or LM Studio wrapper binaries.
+The LM Studio backend folder contains many files. **Only replace the four `.so` files below.** Keep everything else untouched.
+
+**Files to REPLACE (from the release zip or your build):**
+- `libggml-base.so`
+- `libggml-cpu.so`
+- `libggml-vulkan.so`
+- `libllama.so`
+
+**Files you must KEEP (LM Studio wrappers — do not touch):**
+- `.node` files: `llm_engine_vulkan.node`, `liblmstudio_bindings_vulkan.node`
+- `libllm_engine.so`
+- `liblmstudiocore.so`
+- `libmtmd.so`
+- `libggml_llamacpp.so`
+- `display-data.json`
+
+Example:
 
 ```bash
 cd llama.cpp-linux-x86_64-vulkan-avx2-k40k80-2.14.0
-cp /path/to/llama.cpp/build-vulkan/bin/libggml*.so .
-cp /path/to/llama.cpp/build-vulkan/bin/libllama.so .
+cp /path/to/downloaded/libggml-base.so .
+cp /path/to/downloaded/libggml-cpu.so .
+cp /path/to/downloaded/libggml-vulkan.so .
+cp /path/to/downloaded/libllama.so .
+# Do NOT touch any other files in this folder.
 ```
 
 ### 5. Update `backend-manifest.json`
