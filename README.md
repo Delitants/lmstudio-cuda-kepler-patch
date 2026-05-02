@@ -1,8 +1,12 @@
-# Patched Vulkan Runtime for NVIDIA Tesla K40 / K80 (Kepler)
+# Patched Vulkan Runtime for NVIDIA Tesla K40 / K80 (Kepler) — LM Studio
 
-This repository enables NVIDIA Kepler-architecture datacenter GPUs (Tesla K40, K80, and compatible models) to run LLM inference through the **Vulkan backend** in LM Studio and upstream `llama.cpp`.
+This repository enables NVIDIA Kepler-architecture datacenter GPUs (Tesla K40, K80, and compatible models) to run LLM inference through the **Vulkan backend** in **LM Studio** and upstream `llama.cpp`.
 
 Kepler is no longer supported by CUDA 12.x, and the stock LM Studio Vulkan backend is compiled for AVX2-only systems. This project provides build scripts, CMake patches, and LM Studio backend manifests to restore compatibility.
+
+![LM Studio K40 Vulkan Backend - Main Window](screenshots/demo-1.png)
+
+![LM Studio K40 Vulkan Backend - Model Loaded](screenshots/demo-2.png)
 
 ---
 
@@ -14,6 +18,18 @@ Kepler is no longer supported by CUDA 12.x, and the stock LM Studio Vulkan backe
 | Tesla K80 | Kepler | 3.7 | Supported |
 | GRID K520 | Kepler | 3.0 | Likely compatible (untested) |
 | GTX 780 Ti | Kepler | 3.5 | Likely compatible (untested) |
+
+---
+
+## Quick Start (Pre-built Binaries)
+
+If you want to skip compiling, download the latest release assets and copy the `.so` files into your LM Studio backend folder.
+
+1. Go to [Releases](https://github.com/Delitants/lmstudio-vulkan-kepler-patch/releases).
+2. Download `lmstudio-vulkan-kepler-libraries.zip`.
+3. Extract and copy the `.so` files into a duplicated LM Studio Vulkan backend folder (see **Integrate into LM Studio** below).
+4. Replace `backend-manifest.json` with the one from `lm-studio-manifest/` in this repo.
+5. Restart LM Studio.
 
 ---
 
@@ -205,16 +221,6 @@ Requirements:
 - `gcc-10` or `gcc-11` as host compiler
 
 See `docs/tesla-k40-lmstudio.md` for full CUDA integration steps.
-
----
-
-## Demo Screenshots
-
-LM Studio running on a Tesla K40 via the patched Vulkan backend.
-
-![LM Studio K40 Vulkan Backend - Main Window](screenshots/demo-1.png)
-
-![LM Studio K40 Vulkan Backend - Model Loaded](screenshots/demo-2.png)
 
 ---
 
