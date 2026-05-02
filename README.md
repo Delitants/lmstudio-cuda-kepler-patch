@@ -210,7 +210,11 @@ See `docs/tesla-k40-lmstudio.md` for full CUDA integration steps.
 
 ## Demo Screenshots
 
-See `screenshots/` for LM Studio running on a Tesla K40 via the patched Vulkan backend.
+LM Studio running on a Tesla K40 via the patched Vulkan backend.
+
+![LM Studio K40 Vulkan Backend - Main Window](screenshots/demo-1.png)
+
+![LM Studio K40 Vulkan Backend - Model Loaded](screenshots/demo-2.png)
 
 ---
 
