@@ -8,7 +8,9 @@ Kepler is no longer supported by CUDA 12.x, and the stock LM Studio backends are
 - **CUDA backend** — Fully working, highest performance, actively maintained.
 - **Vulkan backend** — Working alternative if you prefer not to install CUDA 11.x.
 
-![LM Studio K40 CUDA Backend - Model Loaded](screenshots/demo-2.png)
+![LM Studio K40 Backend - Main Window](screenshots/demo-1.png)
+
+![LM Studio K40 Backend - Model Loaded](screenshots/demo-2.png)
 
 ---
 
