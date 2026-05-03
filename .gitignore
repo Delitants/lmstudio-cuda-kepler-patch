@@ -1,0 +1,20 @@
+# Release assets (large binaries go to GitHub Releases, not git)
+release-assets/
+
+# macOS
+.DS_Store
+
+# Editor backups
+*~
+*.swp
+*.swo
+
+# Build artifacts (if any)
+*.o
+*.so
+*.a
+build/
+build-*/
+
+# LM Studio local paths (example paths users might accidentally commit)
+*.lmstudio/

@@ -1,0 +1,177 @@
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index ecd12b80d..521cbed68 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -1474,6 +1474,7 @@ static void ggml_cuda_op_mul_mat_cublas(
+     int64_t ldc = id == ctx.device ? ne0 : row_diff;
+ 
+     const int cc = ggml_cuda_info().devices[id].cc;
++    const cublasGemmAlgo_t gemm_algo = cc >= GGML_CUDA_CC_VOLTA ? CUBLAS_GEMM_DEFAULT_TENSOR_OP : CUBLAS_GEMM_DEFAULT;
+ 
+     const bool supports_bf16 = GGML_CUDA_CC_IS_NVIDIA(cc) || GGML_CUDA_CC_IS_AMD(cc) ||
+         (GGML_CUDA_CC_IS_MTHREADS(cc) && cc >= GGML_CUDA_CC_QY2);
+@@ -1509,7 +1510,7 @@ static void ggml_cuda_op_mul_mat_cublas(
+                                  src1_ptr,       CUDA_R_16BF, ne10,
+                     &beta_f32,   dst_bf16.get(), CUDA_R_16BF, ldc,
+                     CUBLAS_COMPUTE_32F,
+-                    CUBLAS_GEMM_DEFAULT_TENSOR_OP));
++                    gemm_algo));
+ 
+         const to_fp32_cuda_t to_fp32_cuda = ggml_get_to_fp32_cuda(GGML_TYPE_BF16);
+         to_fp32_cuda(dst_bf16.get(), dst_dd_i, row_diff*src1_ncols, stream);
+@@ -1553,7 +1554,7 @@ static void ggml_cuda_op_mul_mat_cublas(
+                                 src1_ptr,  CUDA_R_16F, ne10,
+                         &beta,   dst_dd_i, CUDA_R_32F, ldc,
+                         CUBLAS_COMPUTE_32F,
+-                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
++                        gemm_algo));
+         } else {
+             ggml_cuda_pool_alloc<half> dst_f16(ctx.pool(id), row_diff*src1_ncols);
+ 
+@@ -1567,7 +1568,7 @@ static void ggml_cuda_op_mul_mat_cublas(
+                                     src1_ptr,      CUDA_R_16F, ne10,
+                         &beta_f16,  dst_f16.get(), CUDA_R_16F, ldc,
+                         CUBLAS_COMPUTE_16F,
+-                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
++                        gemm_algo));
+ 
+             const to_fp32_cuda_t to_fp32_cuda = ggml_get_to_fp32_cuda(GGML_TYPE_F16);
+             to_fp32_cuda(dst_f16.get(), dst_dd_i, row_diff*src1_ncols, stream);
+@@ -2089,6 +2090,7 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+ 
+     int id = ggml_cuda_get_device();
+     const int cc = ggml_cuda_info().devices[id].cc;
++    const cublasGemmAlgo_t gemm_algo = cc >= GGML_CUDA_CC_VOLTA ? CUBLAS_GEMM_DEFAULT_TENSOR_OP : CUBLAS_GEMM_DEFAULT;
+     static constexpr bool is_src0_type_f16 = src0_type == GGML_TYPE_F16;
+ 
+     // bf16 and fp32 are already being computed in fp32 (ensure it using static_assert),
+@@ -2098,9 +2100,15 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+     const bool need_compute_32f = is_src0_type_f16 && !force_compute_type.fp16 && (GGML_CUDA_CC_IS_CDNA(cc)
+                                                                                   || GGML_CUDA_CC_IS_RDNA4(cc)
+                                                                                   || cc == GGML_CUDA_CC_VOLTA
++                                                                                  || cc < 500
+                                                                                   || force_compute_type.fp32);
+ 
+-    if (dst->op_params[0] == GGML_PREC_DEFAULT && !need_compute_32f) {
++    // Kepler (sm_35/sm_37) and older GPUs do not support FP16 in cublasGemm*BatchedEx.
++    // Declare FP32 conversion buffers here so they stay alive through the cuBLAS call.
++    ggml_cuda_pool_alloc<float> src0_f32(ctx.pool());
++    ggml_cuda_pool_alloc<float> src1_f32(ctx.pool());
++
++    if (dst->op_params[0] == GGML_PREC_DEFAULT && !need_compute_32f && cc >= 500) {
+         if constexpr (src0_type == GGML_TYPE_F32) {
+             dst_t = (char *) dst_ddf;  // Direct F32 output
+         } else {
+@@ -2114,6 +2122,35 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+         cu_data_type = batched_mul_mat_traits<GGML_TYPE_F32>::data_type;
+         alpha = batched_mul_mat_traits<GGML_TYPE_F32>::get_alpha();
+         beta = batched_mul_mat_traits<GGML_TYPE_F32>::get_beta();
++
++        if (cc < 500) {
++            cu_data_type_a = CUDA_R_32F;
++            cu_data_type_b = CUDA_R_32F;
++
++            // Convert src0 to FP32
++            if constexpr (src0_type != GGML_TYPE_F32) {
++                const int64_t ne_src0 = ggml_nelements(src0);
++                src0_f32.alloc(ne_src0);
++                const to_fp32_cuda_t to_fp32 = ggml_get_to_fp32_cuda(src0_type);
++                GGML_ASSERT(to_fp32 != nullptr);
++                to_fp32(src0->data, src0_f32.get(), ne_src0, main_stream);
++                src0_ptr = (const cuda_t *) src0_f32.get();
++            }
++
++            // Convert src1 to FP32 if it isn't already
++            if (src1->type != GGML_TYPE_F32) {
++                const int64_t ne_src1 = ggml_nelements(src1);
++                src1_f32.alloc(ne_src1);
++                const to_fp32_cuda_t to_fp32 = ggml_get_to_fp32_cuda(src1->type);
++                GGML_ASSERT(to_fp32 != nullptr);
++                to_fp32(src1->data, src1_f32.get(), ne_src1, main_stream);
++                src1_ptr = (const cuda_t *) src1_f32.get();
++                s11 = ne10;
++                s12 = ne11 * s11;
++                s13 = ne12 * s12;
++                is_src1_cont_2 = true;
++            }
++        }
+     }
+ 
+     GGML_ASSERT(ne12 % ne02 == 0);
+@@ -2123,7 +2160,7 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+     const int64_t r2 = ne12/ne02;
+     const int64_t r3 = ne13/ne03;
+ 
+-    if (r2 == 1 && r3 == 1 && is_src0_cont_2 && is_src1_cont_2) {
++    if (r2 == 1 && r3 == 1 && is_src0_cont_2 && is_src1_cont_2 && cc >= 500) {
+         // with a [0, 2, 1, 3] perm. and ne02==1 the matrix strides need to be determined from dim 3:
+         const int64_t sma = ne02 == 1 ? nb03/nb00 : nb02/nb00;
+         const int64_t smb = ne12 == 1 ? s13       : s12;
+@@ -2138,8 +2175,8 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+                 beta,     dst_t, cu_data_type,   ne0,       ne1*ne0, // strideC
+                 ne12*ne13,
+                 cu_compute_type,
+-                CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+-    } else {
++                gemm_algo));
++    } else if (cc >= 500) {
+         // use cublasGemmBatchedEx
+         const int64_t ne23 = ne12*ne13;
+ 
+@@ -2177,7 +2214,55 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+                 beta,  (      void **) (ptrs_dst.get() + 0*ne23), cu_data_type,   ne0,
+                 ne23,
+                 cu_compute_type,
+-                CUBLAS_GEMM_DEFAULT_TENSOR_OP));
++                gemm_algo));
++    } else {
++        // Kepler fallback: cublasSgemmBatched with FP32 pointer arrays
++        const int64_t ne23 = ne12*ne13;
++
++        ggml_cuda_pool_alloc<const void *> ptrs_src(ctx.pool(), 2*ne23);
++        ggml_cuda_pool_alloc<      void *> ptrs_dst(ctx.pool(), 1*ne23);
++
++        // On Kepler we always compute in FP32, so pointer stride is sizeof(float)
++        size_t src1_stride_size = sizeof(float);
++
++        // If src0 was converted to FP32, its byte strides are for a contiguous float buffer
++        size_t nb02_ptr = nb02;
++        size_t nb03_ptr = nb03;
++        if constexpr (src0_type != GGML_TYPE_F32) {
++            nb02_ptr = ne00 * ne01 * sizeof(float);
++            nb03_ptr = ne02 * ne00 * ne01 * sizeof(float);
++        }
++
++        const int threads_x = 16;
++        const int threads_y = 16;
++        dim3 block_dims(threads_x, threads_y);
++
++        dim3 grid_dims(
++            (ne13 + threads_x - 1) / threads_x,
++            (ne12 + threads_y - 1) / threads_y
++        );
++        k_compute_batched_ptrs<<<grid_dims, block_dims, 0, main_stream>>>(
++                src0_ptr, src1_ptr, dst_t,
++                ptrs_src.get(), ptrs_dst.get(),
++                ne12, ne13,
++                ne23,
++                nb02_ptr, nb03_ptr,
++                s12*src1_stride_size,
++                s13*src1_stride_size,
++                nbd2, nbd3,
++                r2, r3);
++
++        CUDA_CHECK(cudaGetLastError());
++
++        const float alpha_f = 1.0f;
++        const float beta_f = 0.0f;
++        CUBLAS_CHECK(
++        cublasSgemmBatched(ctx.cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N,
++                ne01, ne11, ne10,
++                &alpha_f, (const float **) (ptrs_src.get() + 0*ne23), nb01/nb00,
++                          (const float **) (ptrs_src.get() + 1*ne23), s11,
++                &beta_f,  (      float **) (ptrs_dst.get() + 0*ne23), ne0,
++                ne23));
+     }
+ 
+     // Convert output back to F32 if needed

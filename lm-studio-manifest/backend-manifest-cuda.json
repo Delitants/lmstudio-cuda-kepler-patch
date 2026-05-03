@@ -1,0 +1,42 @@
+{
+  "version": "2.14.0",
+  "domains": [
+    "llm",
+    "embedding"
+  ],
+  "engine": "llama.cpp",
+  "target_libraries": [
+    {
+      "name": "llm_engine_cuda.node",
+      "type": "llm_engine",
+      "version": "0.1.2"
+    },
+    {
+      "name": "liblmstudio_bindings_cuda.node",
+      "type": "liblmstudio",
+      "version": "0.2.26"
+    }
+  ],
+  "platform": "linux",
+  "cpu": {
+    "architecture": "x86_64",
+    "instruction_set_extensions": [
+      "AVX"
+    ]
+  },
+  "gpu": {
+    "make": "Nvidia",
+    "framework": "CUDA"
+  },
+  "supported_model_formats": [
+    "gguf"
+  ],
+  "manifest_version": "4",
+  "extension_type": "engine",
+  "vendor_lib_package_names": [
+    "linux-llama-cuda-vendor-v1"
+  ],
+  "minimum_lmstudio_version": "0.4.0+15",
+  "minimum_llmster_version": "0.0.1+9",
+  "name": "llama.cpp-linux-x86_64-nvidia-cuda-avx2-k40k80"
+}

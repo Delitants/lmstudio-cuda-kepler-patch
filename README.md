@@ -1,12 +1,14 @@
-# Patched Vulkan Runtime for NVIDIA Tesla K40 / K80 (Kepler) — LM Studio
+# Patched CUDA / Vulkan Runtime for NVIDIA Tesla K40 / K80 (Kepler) — LM Studio
 
-This repository enables NVIDIA Kepler-architecture datacenter GPUs (Tesla K40, K80, and compatible models) to run LLM inference through the **Vulkan backend** in **LM Studio** and upstream `llama.cpp`.
+This repository enables NVIDIA Kepler-architecture datacenter GPUs (Tesla K40, K80, and compatible models) to run LLM inference through **CUDA** or **Vulkan** backends in **LM Studio** and upstream `llama.cpp`.
 
-Kepler is no longer supported by CUDA 12.x, and the stock LM Studio Vulkan backend is compiled for AVX2-only systems. This project provides build scripts, CMake patches, and LM Studio backend manifests to restore compatibility.
+Kepler is no longer supported by CUDA 12.x, and the stock LM Studio backends are compiled for AVX2-only systems. This project provides build scripts, source patches, CMake fixes, and LM Studio backend manifests to restore compatibility.
 
-![LM Studio K40 Vulkan Backend - Main Window](screenshots/demo-1.png)
+**Status:**
+- **CUDA backend** — Fully working, highest performance, actively maintained.
+- **Vulkan backend** — Working alternative if you prefer not to install CUDA 11.x.
 
-![LM Studio K40 Vulkan Backend - Model Loaded](screenshots/demo-2.png)
+![LM Studio K40 CUDA Backend - Model Loaded](screenshots/demo-2.png)
 
 ---
 
@@ -14,10 +16,11 @@ Kepler is no longer supported by CUDA 12.x, and the stock LM Studio Vulkan backe
 
 | GPU | Architecture | Compute Capability | Status |
 |-----|-------------|-------------------|--------|
-| Tesla K40 | Kepler | 3.5 | Supported |
-| Tesla K80 | Kepler | 3.7 | Supported |
+| Tesla K40 | Kepler | 3.5 | CUDA + Vulkan |
+| Tesla K80 | Kepler | 3.7 | CUDA + Vulkan |
 | GRID K520 | Kepler | 3.0 | Likely compatible (untested) |
 | GTX 780 Ti | Kepler | 3.5 | Likely compatible (untested) |
+| GTX 1070 / 1080 | Pascal | 6.1 | CUDA (multi-arch build) |
 
 ---
 
@@ -25,9 +28,11 @@ Kepler is no longer supported by CUDA 12.x, and the stock LM Studio Vulkan backe
 
 If you want to skip compiling, download the latest release assets and copy the `.so` files into your LM Studio backend folder.
 
-1. Go to [Releases](https://github.com/Delitants/lmstudio-vulkan-kepler-patch/releases).
-2. Download `lmstudio-vulkan-kepler-libraries.zip`.
-3. Duplicate your stock LM Studio Vulkan backend folder (see step 3 below).
+1. Go to [Releases](https://github.com/Delitants/lmstudio-cuda-kepler-patch/releases).
+2. Download the appropriate zip for your backend:
+   - `lmstudio-cuda-kepler-libraries.zip` — for CUDA backend
+   - `lmstudio-vulkan-kepler-libraries.zip` — for Vulkan backend
+3. Duplicate your stock LM Studio backend folder (see integration guides below).
 4. Copy **only** the `.so` files from the zip into the duplicated folder. **Do not touch any other files.**
 5. Use the included `backend-manifest.json` as a reference for editing the manifest in your duplicated folder.
 6. Restart LM Studio.
@@ -108,48 +113,58 @@ If you use **SDDM** (KDE Plasma) or **LightDM**, the equivalent setting is typic
 
 ---
 
-## Build the Vulkan Backend
+## CUDA Backend (Recommended)
 
-### 1. Prerequisites
+The CUDA backend provides the highest performance on NVIDIA GPUs. It requires CUDA Toolkit 11.8 and a source patch to fix batched GEMM on Kepler.
 
-```bash
-# Ubuntu / Debian
-sudo apt update
-sudo apt install -y build-essential cmake git vulkan-tools libvulkan-dev
+### Full Guide
 
-# Verify Vulkan is visible to the NVIDIA driver
-vulkaninfo | grep "deviceName"
-# Should list your K40/K80
-```
+See **[docs/cuda-kepler-lmstudio.md](docs/cuda-kepler-lmstudio.md)** for:
+- Prerequisites (CUDA 11.8, gcc-11, driver 470)
+- Building from source with automatic patch application
+- Integration into LM Studio
+- Troubleshooting
 
-### 2. Get llama.cpp
+### Quick Build
 
 ```bash
+# 1. Get the exact source LM Studio expects
 git clone https://github.com/ggerganov/llama.cpp.git
 cd llama.cpp
-git checkout b2xxx   # Use a stable tag near LM Studio's version (e.g., b3700-b3800)
+git fetch --tags origin
+git checkout b8861
+
+# 2. Build from this repo
+cd /path/to/this/repo
+chmod +x build-scripts/build_cuda_k40_avx1.sh
+./build-scripts/build_cuda_k40_avx1.sh /path/to/llama.cpp
 ```
 
-### 3. Apply the CMake patch
+Output libraries will be in `llama.cpp/build-cuda-k40-avx1/bin/`.
 
-```bash
-git apply build-scripts/cmake_vulkan_fix.patch
-```
+---
 
-This patch disables `GGML_VULKAN_MXFP`, which is not yet implemented for the Vulkan backend and causes missing-symbol build failures.
+## Vulkan Backend (Alternative)
 
-### 4. Build
+If you cannot install CUDA 11.8, the Vulkan backend is a working alternative. It uses the GPU's Vulkan compute shaders instead of CUDA kernels.
+
+### Build
 
 ```bash
 cd /path/to/this/repo
+chmod +x build-scripts/build_vulkan.sh
 ./build-scripts/build_vulkan.sh /path/to/llama.cpp
 ```
 
-Output libraries will be in `llama.cpp/build-vulkan/bin/`:
+Output libraries:
 - `libggml-base.so`
 - `libggml-cpu.so`
 - `libggml-vulkan.so`
 - `libllama.so`
+
+### Integration
+
+Same as CUDA: duplicate the stock Vulkan backend folder in LM Studio, replace only the `.so` files, update `backend-manifest.json` to use `["AVX"]`, and restart LM Studio.
 
 ---
 
@@ -161,53 +176,45 @@ Output libraries will be in `llama.cpp/build-vulkan/bin/`:
 ls ~/.lmstudio/extensions/backends/
 ```
 
-### 2. Back up the stock Vulkan backend
+### 2. Back up the stock backend
 
 ```bash
 cd ~/.lmstudio/extensions/backends/
-cp -r llama.cpp-linux-x86_64-vulkan-avx2-2.14.0 \
-     llama.cpp-linux-x86_64-vulkan-avx2-2.14.0.stock-backup-before-k40k80
+cp -r llama.cpp-linux-x86_64-nvidia-cuda-avx2-2.14.0 \
+     llama.cpp-linux-x86_64-nvidia-cuda-avx2-2.14.0.stock-backup-before-k40k80
 ```
 
 ### 3. Create the K40/K80 backend folder
 
 ```bash
-cp -r llama.cpp-linux-x86_64-vulkan-avx2-2.14.0 \
-     llama.cpp-linux-x86_64-vulkan-avx2-k40k80-2.14.0
+cp -r llama.cpp-linux-x86_64-nvidia-cuda-avx2-2.14.0 \
+     llama.cpp-linux-x86_64-nvidia-cuda-avx2-k40k80-2.14.0
 ```
 
 ### 4. Replace only the llama.cpp shared libraries
 
-The LM Studio backend folder contains many files. **Only replace the four `.so` files below.** Keep everything else untouched.
+The LM Studio backend folder contains many files. **Only replace the four/five `.so` files below.** Keep everything else untouched.
 
 **Files to REPLACE (from the release zip or your build):**
 - `libggml-base.so`
 - `libggml-cpu.so`
-- `libggml-vulkan.so`
+- `libggml-cuda.so` (CUDA) or `libggml-vulkan.so` (Vulkan)
+- `libggml.so`
 - `libllama.so`
 
 **Files you must KEEP (LM Studio wrappers — do not touch):**
-- `.node` files: `llm_engine_vulkan.node`, `liblmstudio_bindings_vulkan.node`
+- `.node` files: `llm_engine_cuda.node`, `liblmstudio_bindings_cuda.node`
 - `libllm_engine.so`
 - `liblmstudiocore.so`
 - `libmtmd.so`
 - `libggml_llamacpp.so`
 - `display-data.json`
 
-Example:
-
-```bash
-cd llama.cpp-linux-x86_64-vulkan-avx2-k40k80-2.14.0
-cp /path/to/downloaded/libggml-base.so .
-cp /path/to/downloaded/libggml-cpu.so .
-cp /path/to/downloaded/libggml-vulkan.so .
-cp /path/to/downloaded/libllama.so .
-# Do NOT touch any other files in this folder.
-```
-
 ### 5. Update `backend-manifest.json`
 
-Use the provided manifest in `lm-studio-manifest/backend-manifest.json` as a reference.
+Use the provided manifests in `lm-studio-manifest/` as a reference:
+- `backend-manifest-cuda.json`
+- `backend-manifest.json` (Vulkan)
 
 Key changes from stock:
 
@@ -216,7 +223,7 @@ Key changes from stock:
   "cpu": {
     "instruction_set_extensions": ["AVX"]
   },
-  "name": "llama.cpp-linux-x86_64-vulkan-avx2-k40k80"
+  "name": "llama.cpp-linux-x86_64-nvidia-cuda-avx2-k40k80"
 }
 ```
 
@@ -228,45 +235,37 @@ Launch LM Studio, open **Runtime > Loaded Models**, and verify the loaded backen
 
 ---
 
-## CUDA Alternative (Native, Faster)
-
-If you have CUDA 11.x installed, you can build a native CUDA backend instead of Vulkan. This typically yields higher throughput on Kepler.
-
-```bash
-./build-scripts/build_cuda_k40_avx1.sh /path/to/llama.cpp
-```
-
-Requirements:
-- CUDA Toolkit 11.8 (nvcc 11.x)
-- `gcc-10` or `gcc-11` as host compiler
-
-See `docs/tesla-k40-lmstudio.md` for full CUDA integration steps.
-
----
-
 ## Troubleshooting
 
-### `vkCreateInstance` fails
-- Ensure `vulkan-tools` and the NVIDIA Vulkan ICD are installed.
-- Check `ls /usr/share/vulkan/icd.d/` for `nvidia_icd.json`.
-- Run `vulkaninfo` to confirm the GPU is enumerated.
+### `CUBLAS_STATUS_ARCH_MISMATCH` on K40/K80
+- The Kepler batched GEMM patch was not applied or the old libraries are cached.
+- Rebuild with `./build-scripts/build_cuda_k40_avx1.sh` — it applies the patch automatically.
+- Make sure you replaced `libggml-cuda.so` in the LM Studio backend folder.
+
+### `undefined symbol: ggml_cuda_op_mul_mat_vec_f`
+- You built from the wrong llama.cpp commit.
+- Checkout tag `b8861` and rebuild.
 
 ### LM Studio shows "Backend failed to load"
 - Verify `cpu.instruction_set_extensions` is `["AVX"]` and not `["AVX2"]` in your manifest.
 - Check LM Studio logs for missing `.so` symbols.
 
-### Build fails with MXFP4 errors
-- You skipped the CMake patch. Re-apply `cmake_vulkan_fix.patch` before building.
+### Vulkan build fails with MXFP4 errors
+- You skipped the CMake patch. Re-apply `build-scripts/cmake_vulkan_fix.patch` before building.
 
 ### Driver 470 installation aborts on modern kernels
 - Pass `--disable-nouveau` and `--no-drm` flags if needed.
 - For kernels newer than 6.5, you may need the [nvidia-470 dkms patch](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/others) or use the distro-packaged `nvidia-driver-470` if available.
 
+### CUDA build fails with gcc errors
+- CUDA 11.8 requires gcc ≤ 11. Install `gcc-11` / `g++-11`.
+- Pass explicitly: `CC=/usr/bin/gcc-11 CXX=/usr/bin/g++-11 ./build-scripts/build_cuda_k40_avx1.sh ...`
+
 ---
 
 ## License
 
-- Build scripts and patches: MIT (or your preferred license)
+- Build scripts and patches: MIT
 - `llama.cpp`: MIT (upstream)
 - LM Studio wrapper binaries and `.node` files: property of Element Labs / LM Studio; not redistributed here
-- NVIDIA driver: proprietary NVIDIA license; not redistributed here
+- NVIDIA driver and CUDA: proprietary NVIDIA licenses; not redistributed here
