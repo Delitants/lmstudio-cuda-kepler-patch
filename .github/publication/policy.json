@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "repository": "Delitants/lmstudio-cuda-kepler-patch",
+  "baseline": "3402cb48e7e81cf09695424d653ec393f4f6da49",
+  "public_docs": [],
+  "public_data": [],
+  "release_assets": [
+    "lmstudio-cuda-kepler-libraries.zip",
+    "lmstudio-vulkan-kepler-libraries-v*.zip"
+  ]
+}
